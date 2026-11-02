@@ -7,7 +7,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "data"; OUT.mkdir(exist_ok=True)
 today = datetime.date.today()
-since = (today - datetime.timedelta(days=731)).isoformat()
+since = datetime.date(today.year - 2, today.month, 1).isoformat()  # month-anchored: data only changes when Land Registry publishes
 
 Q = f'''PREFIX ppd: <http://landregistry.data.gov.uk/def/ppi/>
 PREFIX lrcommon: <http://landregistry.data.gov.uk/def/common/>
