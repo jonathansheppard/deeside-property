@@ -57,11 +57,29 @@ input:focus,select:focus{outline:2px solid var(--green);border-color:var(--green
 .trow .ch{text-align:right;font-size:13px;color:var(--muted)}
 .trow .tn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .explain p{margin:0 0 10px;font-size:15px;max-width:760px}
+.chart{position:relative;margin:0 0 6px}
+.chart h3{font-size:15px;font-weight:700;margin:12px 0 2px}
+.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart .ax{font-size:12px;fill:#6c757d;font-family:inherit}
+.chart .grid{stroke:#e9ecef;stroke-width:1}
+.chart .base{stroke:#adb5bd;stroke-width:1}
+.chart .hl{stroke:#2d2d2d;stroke-width:1;opacity:0}
+.chart .hit{fill:transparent;cursor:crosshair}
+.chart .pend{fill:#f7f8f9}
+.chart .pendtx{font-size:12px;fill:#6c757d;font-style:italic}
+.tip{position:absolute;pointer-events:none;background:#2d2d2d;color:#fff;font-size:13px;line-height:1.35;padding:6px 9px;border-radius:6px;white-space:nowrap;transform:translate(-50%,-100%);display:none;z-index:2}
+details.tbl{margin:10px 0 0;font-size:14px}
+details.tbl summary{cursor:pointer;color:var(--green-dk);font-weight:600}
+details.tbl table{border-collapse:collapse;margin:8px 0 0;width:100%;max-width:520px}
+details.tbl th,details.tbl td{text-align:right;padding:4px 8px;border-bottom:1px solid var(--border)}
+details.tbl th:first-child,details.tbl td:first-child{text-align:left}
+.stats.three{grid-template-columns:repeat(3,1fr);margin:6px 0 0}
+.stats.three .stat{background:var(--bg)}
 .credit{font-size:13px;color:var(--muted);margin:0 auto 28px}
 .empty{color:var(--muted);font-size:15px;padding:8px 0}
 @media (max-width:640px){
  h1{font-size:24px}
- .stats{grid-template-columns:repeat(2,1fr)}
+ .stats,.stats.three{grid-template-columns:repeat(2,1fr)}
  .filters{grid-template-columns:1fr 1fr}
  .filters input{grid-column:1/-1}
  .card{grid-template-columns:1fr;gap:4px}
@@ -127,6 +145,12 @@ input:focus,select:focus{outline:2px solid var(--green);border-color:var(--green
 </section>
 
 <section class="panel">
+<h2>Month by month</h2>
+<p class="sub">Typical (median) price of ordinary sales and the number of sales each month. The latest months are still being registered, so they will rise as more sales come in.</p>
+<div id="monthly"><p class="loading">Loading prices</p></div>
+</section>
+
+<section class="panel">
 <h2>Latest sales</h2>
 <p class="sub" id="latestSub">The most recent sales in the Land Registry figures, newest first.</p>
 <div class="list" id="latest"><p class="loading">Loading the latest sales</p></div>
@@ -145,12 +169,21 @@ input:focus,select:focus{outline:2px solid var(--green);border-color:var(--green
 <div class="towns" id="types"><p class="loading">Loading prices</p></div>
 </section>
 
+<section class="panel" id="nbPanel" hidden>
+<h2>New builds and leasehold</h2>
+<p class="sub">Ordinary sales across Flintshire in the last 12 months.</p>
+<div class="stats three" id="nb"></div>
+<div class="stats three" id="lh"></div>
+<p class="sub" id="lhNote" style="margin:10px 0 0"></p>
+</section>
+
 <section class="panel explain">
 <h2>About these figures</h2>
 <p>Every sale of a home in England and Wales is registered with HM Land Registry. It publishes the price, date and address of each sale once a month.</p>
 <p><strong>The figures run two to three months behind.</strong> A sale only appears once the buyer's solicitor has registered it, so the most recent weeks always look quieter than they really were. They fill in over the following months.</p>
 <p>The typical prices use ordinary sales only. Land Registry marks some sales as additional: repossessions, buy-to-let purchases with a mortgage, sales to companies and transfers that are not on the open market. These are still listed, labelled "Not a standard sale", but are left out of the typical prices because they can pull the figures up or down.</p>
 <p>The typical price is the median, the sale in the middle when every sale is lined up from cheapest to dearest. It is less thrown by a single mansion or a cheap flat than an average. Sales not completed for value, such as gifts and right to buy, are not in the Land Registry data at all.</p>
+<p>Leasehold means the buyer owns the home for a fixed number of years but not the land it stands on, and usually pays ground rent and other charges to a freeholder. It is normal for flats. For houses it is less common and has been the subject of a national scandal over rising ground rents, so it is shown separately.</p>
 <p>Places are the town or village Land Registry gives for each address. Where it gives none, the postal town is used.</p>
 </section>
 </main>
@@ -227,7 +260,7 @@ function card(s){
   return `<div class="card"><div class="price">${gbp(s.p)}</div><div>`+
    `<div class="ad">${esc(s.a||"Address not given")}</div>`+
    `<div class="pl">${esc([s.pl,s.pc].filter(Boolean).join(", "))}</div>`+
-   `<div class="dt">${esc(s.t)} &middot; Sold ${fmt(s.d)}</div>`+
+   `<div class="dt">${esc(s.t)}${s.e==="L"?" &middot; Leasehold":s.e==="F"?" &middot; Freehold":""} &middot; Sold ${fmt(s.d)}</div>`+
    (s.n?'<span class="tag new">New build</span>':"")+
    (s.std?"":`<span class="tag oth" title="${OTHER}">Not a standard sale</span>`)+
    `</div></div>`;
@@ -238,6 +271,80 @@ function pager(el,btn,rows,step){
   el.innerHTML="";btn.onclick=more;
   if(!rows.length){el.innerHTML='<p class="empty">No sales found.</p>';btn.hidden=true;return}
   more();
+}
+const MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const monthName=m=>new Date(m+"-15T12:00:00").toLocaleDateString("en-GB",{month:"long",year:"numeric"});
+function monthly(el,all,latestDate){
+  const by={};
+  all.forEach(s=>{const m=s.d.slice(0,7);(by[m]=by[m]||{n:0,p:[]}).n++;if(s.std)by[m].p.push(s.p)});
+  const months=Object.keys(by).sort();
+  if(all[all.length-1].d.slice(8)!=="01")months.shift(); // drop a part month at the start
+  const lm=latestDate.slice(0,7);
+  const pendFrom=months[Math.max(0,months.indexOf(lm)-2)];
+  const rows=months.map(m=>({m,n:by[m].n,med:by[m].p.length>=10?median(by[m].p):null,pend:m>=pendFrom}));
+  const W=Math.max(300,Math.round(el.clientWidth)||720),L=W<500?44:56,R=8,cw=(W-L-R)/rows.length,x=i=>L+cw*i+cw/2,step=W<500?6:3;
+  const labs=[];let lastL=-9;
+  rows.forEach((r,i)=>{const mo=+r.m.slice(5),jan=mo===1,want=jan||i===0||(mo-1)%step===0,gap=W<500?4:2;
+    if(want&&(i-lastL>gap||jan)){if(jan&&i-lastL<=gap&&lastL>=0)labs[lastL]="";labs[i]=(jan||i===0)?`${MON[mo-1]} ${r.m.slice(2,4)}`:MON[mo-1];lastL=i}});
+  const lab=(r,i)=>labs[i]||"";
+  function frame(H,top,ticks,fmtT,yOf){
+    const pi=rows.findIndex(r=>r.pend);
+    let g=`<rect class="pend" x="${L+cw*pi}" y="${top-4}" width="${W-R-L-cw*pi}" height="${H-top+4}"/>`;
+    if(top>14)g+=`<text class="pendtx" x="${W-R-4}" y="${top-8}" text-anchor="end">Still being registered</text>`;
+    ticks.forEach(t=>g+=`<line class="grid" x1="${L}" x2="${W-R}" y1="${yOf(t)}" y2="${yOf(t)}"/><text class="ax" x="${L-6}" y="${yOf(t)+4}" text-anchor="end">${fmtT(t)}</text>`);
+    return g;
+  }
+  function nice(lo,hi,n){const step=[1,2,2.5,5,10].map(f=>f*Math.pow(10,Math.floor(Math.log10((hi-lo)/n)))).find(s=>(hi-lo)/s<=n)||((hi-lo)/n);const a=Math.floor(lo/step)*step,t=[];for(let v=a;v<=hi+step*.001;v+=step)t.push(v);if(t[t.length-1]<hi)t.push(t[t.length-1]+step);return t}
+  // price line
+  const meds=rows.filter(r=>r.med).map(r=>r.med);
+  const pt=nice(Math.min(...meds)*.97,Math.max(...meds)*1.03,4),H1=200,T1=22,B1=H1-24;
+  const y1=v=>B1-(v-pt[0])/(pt[pt.length-1]-pt[0])*(B1-T1);
+  let s1=frame(H1,T1,pt,v=>"£"+Math.round(v/1000)+"k",y1);
+  let d="",dp="";rows.forEach((r,i)=>{if(!r.med)return;const c=`${x(i).toFixed(1)},${y1(r.med).toFixed(1)}`;if(!r.pend||(i&&!rows[i-1].pend))d+=(d?"L":"M")+c;if(r.pend||(rows[i+1]&&rows[i+1].pend))dp+=(dp?"L":"M")+c});
+  s1+=`<path d="${d}" fill="none" stroke="#4d7a0c" stroke-width="2" stroke-linejoin="round"/><path d="${dp}" fill="none" stroke="#4d7a0c" stroke-width="2" stroke-dasharray="4 4"/>`;
+  rows.forEach((r,i)=>{if(r.med)s1+=`<circle cx="${x(i)}" cy="${y1(r.med)}" r="4" fill="${r.pend?"#fff":"#4d7a0c"}" stroke="#4d7a0c" stroke-width="2"/>`});
+  s1+=`<line class="hl" y1="${T1-4}" y2="${B1}"/>`;
+  rows.forEach((r,i)=>{const t=lab(r,i);if(t)s1+=`<text class="ax" x="${x(i)}" y="${H1-6}" text-anchor="middle">${t}</text>`});
+  rows.forEach((r,i)=>s1+=`<rect class="hit" data-i="${i}" x="${L+cw*i}" y="0" width="${cw}" height="${H1}"/>`);
+  // sales bars
+  const nt=nice(0,Math.max(...rows.map(r=>r.n)),3),H2=150,T2=10,B2=H2-24;
+  const y2=v=>B2-v/nt[nt.length-1]*(B2-T2);
+  let s2=frame(H2,T2,nt,v=>v,y2);
+  const bw=Math.max(2,cw-4);
+  rows.forEach((r,i)=>{const h=B2-y2(r.n),bx=x(i)-bw/2,rr=Math.min(4,bw/2,h);s2+=`<path d="M${bx},${B2}V${B2-h+rr}Q${bx},${B2-h} ${bx+rr},${B2-h}H${bx+bw-rr}Q${bx+bw},${B2-h} ${bx+bw},${B2-h+rr}V${B2}Z" fill="${r.pend?"#c9e3a0":"#88c425"}"/>`});
+  s2+=`<line class="base" x1="${L}" x2="${W-R}" y1="${B2}" y2="${B2}"/><line class="hl" y1="${T2}" y2="${B2}"/>`;
+  rows.forEach((r,i)=>{const t=lab(r,i);if(t)s2+=`<text class="ax" x="${x(i)}" y="${H2-6}" text-anchor="middle">${t}</text>`});
+  rows.forEach((r,i)=>s2+=`<rect class="hit" data-i="${i}" x="${L+cw*i}" y="0" width="${cw}" height="${H2}"/>`);
+  el.innerHTML=`<div class="chart"><h3>Typical price</h3><svg viewBox="0 0 ${W} ${H1}" role="img" aria-label="Typical price each month">${s1}</svg></div>`+
+   `<div class="chart"><h3>Number of sales</h3><svg viewBox="0 0 ${W} ${H2}" role="img" aria-label="Number of sales each month">${s2}</svg></div><div class="tip" id="tip"></div>`+
+   `<details class="tbl"><summary>Show the figures as a table</summary><table><thead><tr><th>Month</th><th>Typical price</th><th>Sales</th></tr></thead><tbody>`+
+   rows.slice().reverse().map(r=>`<tr><td>${monthName(r.m)}${r.pend?" *":""}</td><td>${r.med?gbp(r.med):"&ndash;"}</td><td>${r.n}</td></tr>`).join("")+
+   `</tbody></table><p class="sub" style="margin:6px 0 0">* Still being registered.</p></details>`;
+  const tip=el.querySelector("#tip");el.style.position="relative";
+  const svgs=[...el.querySelectorAll("svg")];
+  function show(i,ev){
+    const r=rows[i];
+    svgs.forEach(sv=>{const l=sv.querySelector(".hl");l.setAttribute("x1",x(i));l.setAttribute("x2",x(i));l.style.opacity=1});
+    tip.innerHTML=`<strong>${monthName(r.m)}</strong><br>Typical price ${r.med?gbp(r.med):"not enough sales"}<br>${r.n} sales${r.pend?"<br><em>Still being registered</em>":""}`;
+    const box=el.getBoundingClientRect(),sb=ev.currentTarget.ownerSVGElement.getBoundingClientRect();
+    const px=sb.left-box.left+x(i)/W*sb.width;
+    tip.style.left=Math.min(Math.max(px,80),box.width-80)+"px";tip.style.top=Math.max(ev.clientY-box.top-14,60)+"px";tip.style.display="block";
+  }
+  function hide(){tip.style.display="none";svgs.forEach(sv=>sv.querySelector(".hl").style.opacity=0)}
+  el.querySelectorAll(".hit").forEach(h=>{h.addEventListener("mousemove",e=>show(+h.dataset.i,e));h.addEventListener("click",e=>show(+h.dataset.i,e));h.addEventListener("mouseleave",hide)});
+}
+function newbuilds(now){
+  const std=now.filter(s=>s.std),nb=std.filter(s=>s.n).map(s=>s.p),old=std.filter(s=>!s.n).map(s=>s.p);
+  if(nb.length<10)return;
+  const a=median(nb),b=median(old);
+  document.getElementById("nb").innerHTML=[[gbp(a),`typical new build (${nb.length} sales)`],[gbp(b),"typical older home"],[(a>b?"+":"")+pct(a,b)+"%",a>b?"more for a new build":"for a new build"]].map(s=>`<div class="stat"><b>${s[0]}</b><span>${s[1]}</span></div>`).join("");
+  const withE=now.filter(s=>s.e);
+  if(withE.length>100){
+    const lh=withE.filter(s=>s.e==="L"),houses=withE.filter(s=>s.t!=="Flat"&&s.t!=="Other"),lhh=houses.filter(s=>s.e==="L"),lhnb=lhh.filter(s=>s.n);
+    document.getElementById("lh").innerHTML=[[Math.round(lh.length/withE.length*100)+"%","of all sales were leasehold"],[lhh.length,"houses sold leasehold"],[lhnb.length,"of those were new builds"]].map(s=>`<div class="stat"><b>${s[0]}</b><span>${s[1]}</span></div>`).join("");
+    document.getElementById("lhNote").textContent="Leasehold figures count every sale, not only ordinary ones. Houses means detached, semi-detached and terraced.";
+  }
+  document.getElementById("nbPanel").hidden=false;
 }
 function bars(el,rows,withChange){
   const max=Math.max(...rows.map(r=>r.m));
@@ -260,6 +367,9 @@ fetch("data/sales.json",{cache:"no-cache"}).then(r=>r.json()).then(data=>{
    [now.length.toLocaleString("en-GB"),"sales in the last 12 months"],
    [now.filter(s=>s.n).length.toLocaleString("en-GB"),"of them new builds"]
   ].map(s=>`<div class="stat"><b>${s[0]}</b><span>${s[1]}</span></div>`).join("");
+  const mEl=document.getElementById("monthly");mEl.innerHTML="";monthly(mEl,all,latestDate);
+  let rw=mEl.clientWidth,rt;addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>{if(Math.abs(mEl.clientWidth-rw)>40){rw=mEl.clientWidth;const open=mEl.querySelector("details")?.open;monthly(mEl,all,latestDate);if(open)mEl.querySelector("details").open=true}},200)});
+  newbuilds(now);
   // latest: sales in the most recent 30 days of the figures
   const cut=new Date(new Date(latestDate+"T12:00:00").getTime()-30*864e5).toISOString().slice(0,10);
   const latest=all.filter(s=>s.d>cut);
@@ -288,7 +398,7 @@ fetch("data/sales.json",{cache:"no-cache"}).then(r=>r.json()).then(data=>{
   }
   let timer;q.addEventListener("input",()=>{clearTimeout(timer);timer=setTimeout(run,150)});
   sel.addEventListener("change",run);ty.addEventListener("change",run);
-}).catch(()=>{document.getElementById("meta").textContent="Sorry, the sales could not be loaded. Please try again shortly.";["stats","latest","towns","types"].forEach(i=>document.getElementById(i).innerHTML="")});
+}).catch(()=>{document.getElementById("meta").textContent="Sorry, the sales could not be loaded. Please try again shortly.";["stats","latest","towns","types","monthly"].forEach(i=>document.getElementById(i).innerHTML="")});
 })();
 </script>
 </body>

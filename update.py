@@ -12,9 +12,10 @@ since = datetime.date(today.year - 2, today.month, 1).isoformat()  # month-ancho
 Q = f'''PREFIX ppd: <http://landregistry.data.gov.uk/def/ppi/>
 PREFIX lrcommon: <http://landregistry.data.gov.uk/def/common/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-SELECT ?date ?price ?saon ?paon ?street ?locality ?town ?postcode ?type ?newbuild ?cat WHERE {{
+SELECT ?date ?price ?saon ?paon ?street ?locality ?town ?postcode ?type ?newbuild ?cat ?estate WHERE {{
   ?t ppd:propertyAddress ?a ; ppd:pricePaid ?price ; ppd:transactionDate ?date ;
-     ppd:propertyType ?type ; ppd:newBuild ?newbuild ; ppd:transactionCategory ?cat .
+     ppd:propertyType ?type ; ppd:newBuild ?newbuild ; ppd:transactionCategory ?cat ;
+     ppd:estateType ?estate .
   ?a lrcommon:district "FLINTSHIRE" .
   OPTIONAL {{ ?a lrcommon:saon ?saon }} OPTIONAL {{ ?a lrcommon:paon ?paon }}
   OPTIONAL {{ ?a lrcommon:street ?street }} OPTIONAL {{ ?a lrcommon:town ?town }}
@@ -49,6 +50,7 @@ for r in rows:
         "pl": nice(r["locality"] or r["town"]), "pc": r["postcode"],
         "t": TYPES.get(r["type"].rsplit("/", 1)[-1], "Other"),
         "n": r["newbuild"] == "true",
+        "e": {"freehold": "F", "leasehold": "L"}.get(r["estate"].rsplit("/", 1)[-1], ""),
         "std": r["cat"].endswith("standardPricePaidTransaction")})
 sales.sort(key=lambda s: (s["d"], s["a"], s["p"]), reverse=True)
 
